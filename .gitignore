@@ -5,7 +5,7 @@ __pycache__/
 venv/
 env/
 .env
-.streamlit/
+.streamlit/secrets.toml
 generated_datasets/*.csv
 generated_datasets/*.xlsx
 generated_datasets/*.json

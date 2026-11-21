@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.git/
+.gitignore
+venv/
+env/
+.env
+.streamlit/secrets.toml
+generated_datasets/*.csv
+generated_datasets/*.xlsx
+generated_datasets/*.json
