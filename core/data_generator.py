@@ -12,12 +12,20 @@ import numpy as np
 import pandas as pd
 from faker import Faker
 
-from synthetic_dataset_generator.core.schema_builder import (
-    ColumnConfig,
-    ColumnType,
-    DistributionType,
-    DatasetSchema,
-)
+try:
+    from core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DistributionType,
+        DatasetSchema,
+    )
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DistributionType,
+        DatasetSchema,
+    )
 
 
 class DataGenerator:

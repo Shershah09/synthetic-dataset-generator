@@ -15,11 +15,18 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import pandas as pd
 
-from synthetic_dataset_generator.core.schema_builder import DatasetSchema
-from synthetic_dataset_generator.core.data_generator import DataGenerator
-from synthetic_dataset_generator.core.validator import DataValidator, QualityReport
-from synthetic_dataset_generator.core.exporter import ExportService
-from synthetic_dataset_generator.ai.schema_agent import SchemaAgent
+try:
+    from core.schema_builder import DatasetSchema
+    from core.data_generator import DataGenerator
+    from core.validator import DataValidator, QualityReport
+    from core.exporter import ExportService
+    from ai.schema_agent import SchemaAgent
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import DatasetSchema
+    from synthetic_dataset_generator.core.data_generator import DataGenerator
+    from synthetic_dataset_generator.core.validator import DataValidator, QualityReport
+    from synthetic_dataset_generator.core.exporter import ExportService
+    from synthetic_dataset_generator.ai.schema_agent import SchemaAgent
 
 
 @dataclass

@@ -12,7 +12,10 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from synthetic_dataset_generator.core.schema_builder import ColumnType, DatasetSchema
+try:
+    from core.schema_builder import ColumnType, DatasetSchema
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import ColumnType, DatasetSchema
 
 
 class CheckStatus(str, Enum):

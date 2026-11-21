@@ -17,9 +17,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from synthetic_dataset_generator.core.exporter import ExportService
-from synthetic_dataset_generator.core.schema_builder import DatasetSchema
-from synthetic_dataset_generator.core.validator import CheckStatus, QualityReport
+try:
+    from core.exporter import ExportService
+    from core.schema_builder import DatasetSchema
+    from core.validator import CheckStatus, QualityReport
+except ImportError:
+    from synthetic_dataset_generator.core.exporter import ExportService
+    from synthetic_dataset_generator.core.schema_builder import DatasetSchema
+    from synthetic_dataset_generator.core.validator import CheckStatus, QualityReport
 
 
 def render_analytics_and_downloads(

@@ -12,24 +12,37 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# Ensure root package is in sys.path
+# Ensure root directory is in sys.path
 root_dir = Path(__file__).resolve().parent
-if str(root_dir.parent) not in sys.path:
-    sys.path.insert(0, str(root_dir.parent))
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
+if str(root_dir.parent) not in sys.path:
+    sys.path.insert(0, str(root_dir.parent))
 
-from synthetic_dataset_generator.core.schema_builder import (
-    DatasetSchema,
-    build_schema_for_domain,
-    DOMAIN_PRESETS,
-)
-from synthetic_dataset_generator.core.data_generator import DataGenerator
-from synthetic_dataset_generator.core.validator import DataValidator, QualityReport
-from synthetic_dataset_generator.core.exporter import ExportService
-from synthetic_dataset_generator.components.configuration import render_configuration_panel
-from synthetic_dataset_generator.components.preview import render_preview_panel
-from synthetic_dataset_generator.components.quality_dashboard import render_analytics_and_downloads
+try:
+    from core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+        DOMAIN_PRESETS,
+    )
+    from core.data_generator import DataGenerator
+    from core.validator import DataValidator, QualityReport
+    from core.exporter import ExportService
+    from components.configuration import render_configuration_panel
+    from components.preview import render_preview_panel
+    from components.quality_dashboard import render_analytics_and_downloads
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+        DOMAIN_PRESETS,
+    )
+    from synthetic_dataset_generator.core.data_generator import DataGenerator
+    from synthetic_dataset_generator.core.validator import DataValidator, QualityReport
+    from synthetic_dataset_generator.core.exporter import ExportService
+    from synthetic_dataset_generator.components.configuration import render_configuration_panel
+    from synthetic_dataset_generator.components.preview import render_preview_panel
+    from synthetic_dataset_generator.components.quality_dashboard import render_analytics_and_downloads
 
 # =============================================================================
 # Page Configuration

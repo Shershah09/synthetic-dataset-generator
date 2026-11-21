@@ -6,18 +6,32 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from synthetic_dataset_generator.core.schema_builder import (
-    ColumnConfig,
-    ColumnType,
-    DatasetSchema,
-    build_schema_for_domain,
-)
-from synthetic_dataset_generator.core.data_generator import DataGenerator
-from synthetic_dataset_generator.core.validator import (
-    DataValidator,
-    CheckStatus,
-)
-from synthetic_dataset_generator.core.exporter import ExportService
+try:
+    from core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from core.data_generator import DataGenerator
+    from core.validator import (
+        DataValidator,
+        CheckStatus,
+    )
+    from core.exporter import ExportService
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from synthetic_dataset_generator.core.data_generator import DataGenerator
+    from synthetic_dataset_generator.core.validator import (
+        DataValidator,
+        CheckStatus,
+    )
+    from synthetic_dataset_generator.core.exporter import ExportService
 
 
 def test_invalid_schema_duplicate_columns():

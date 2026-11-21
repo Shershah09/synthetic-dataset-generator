@@ -4,14 +4,24 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from synthetic_dataset_generator.core.schema_builder import (
-    ColumnConfig,
-    ColumnType,
-    DistributionType,
-    DatasetSchema,
-    build_schema_for_domain,
-)
-from synthetic_dataset_generator.core.data_generator import DataGenerator
+try:
+    from core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DistributionType,
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from core.data_generator import DataGenerator
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        ColumnConfig,
+        ColumnType,
+        DistributionType,
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from synthetic_dataset_generator.core.data_generator import DataGenerator
 
 
 def test_numeric_and_categorical_generation():

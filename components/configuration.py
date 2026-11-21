@@ -16,10 +16,16 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 import streamlit as st
 
-from synthetic_dataset_generator.core.schema_builder import (
-    DatasetSchema,
-    build_schema_for_domain,
-)
+try:
+    from core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+    )
 
 
 def render_configuration_panel() -> Tuple[bool, Optional[DatasetSchema]]:

@@ -5,11 +5,18 @@ Works in conjunction with LLMService to produce robust, validated schemas.
 
 from __future__ import annotations
 from typing import Optional
-from synthetic_dataset_generator.core.schema_builder import (
-    DatasetSchema,
-    build_schema_for_domain,
-)
-from synthetic_dataset_generator.ai.llm_service import LLMService
+try:
+    from core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from ai.llm_service import LLMService
+except ImportError:
+    from synthetic_dataset_generator.core.schema_builder import (
+        DatasetSchema,
+        build_schema_for_domain,
+    )
+    from synthetic_dataset_generator.ai.llm_service import LLMService
 
 
 class SchemaAgent:
