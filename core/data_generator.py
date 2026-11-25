@@ -262,6 +262,9 @@ class DataGenerator:
         # Match class balance
         classes = self.schema.target_classes or [0, 1]
 
+        if n <= 1:
+            return np.array([classes[0]])
+
         if len(classes) == 2:
             # Binary classification (e.g. Disease 0 or 1)
             # Default target balance e.g. class 1 is ~37.6%
@@ -277,12 +280,12 @@ class DataGenerator:
             # Multi-class
             quantiles = np.linspace(0, 1, len(classes) + 1)[1:-1]
             thresholds = [np.quantile(latent_score, q) for q in quantiles]
-            target = np.select(
+            conds = (
                 [latent_score < thresholds[0]] +
                 [np.logical_and(latent_score >= thresholds[i], latent_score < thresholds[i+1]) for i in range(len(thresholds)-1)] +
-                [latent_score >= thresholds[-1]],
-                classes
+                [latent_score >= thresholds[-1]]
             )
+            target = np.select(conds, classes, default=classes[0])
             return target
 
     def _generate_regression_target(self, df: pd.DataFrame) -> np.ndarray:

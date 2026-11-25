@@ -235,6 +235,75 @@ def render_analytics_and_downloads(
         else:
             st.info("No numeric features available for distribution histogram.")
 
+    # -------------------------------------------------------------------------
+    # Advanced Exploratory Visualizations Expander (Report Ch 4.2.10, Figure 4.8)
+    # -------------------------------------------------------------------------
+    with st.expander("📈 Advanced Visualizations (Scatter Plots, Box Plots & Categorical Breakdowns)", expanded=False):
+        viz_tab1, viz_tab2, viz_tab3 = st.tabs(["Bi-variate Scatter Plot", "Box & Whisker Distribution", "Categorical Frequency"])
+
+        with viz_tab1:
+            if len(num_cols) >= 2:
+                sc_c1, sc_c2, sc_c3 = st.columns(3)
+                with sc_c1:
+                    x_col = st.selectbox("X-Axis Feature", num_cols, index=0, key="sc_x_feat")
+                with sc_c2:
+                    y_col = st.selectbox("Y-Axis Feature", num_cols, index=1 if len(num_cols) > 1 else 0, key="sc_y_feat")
+                with sc_c3:
+                    color_options = [None] + [c for c in df.columns if c != "Patient_ID" and c != "ID" and "ID" not in c.upper()]
+                    color_col = st.selectbox("Color Hue", color_options, index=1 if schema.target_column in color_options else 0, key="sc_color_feat")
+
+                fig_scatter = px.scatter(
+                    df,
+                    x=x_col,
+                    y=y_col,
+                    color=color_col if color_col else None,
+                    opacity=0.75,
+                    title=f"{x_col} vs {y_col}",
+                    template="plotly_white",
+                )
+                fig_scatter.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10))
+                st.plotly_chart(fig_scatter, use_container_width=True)
+            else:
+                st.info("At least 2 numeric features required for scatter plot.")
+
+        with viz_tab2:
+            if num_cols:
+                box_feat = st.selectbox("Select Feature for Box Plot", num_cols, index=0, key="box_feat_select")
+                fig_box = px.box(
+                    df,
+                    y=box_feat,
+                    points="outliers",
+                    title=f"{box_feat} - Quartile Distribution & Outliers",
+                    color_discrete_sequence=["#2563eb"],
+                    template="plotly_white",
+                )
+                fig_box.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10))
+                st.plotly_chart(fig_box, use_container_width=True)
+            else:
+                st.info("No numeric features available for box plot.")
+
+        with viz_tab3:
+            cat_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c]) or df[c].nunique() <= 5]
+            if cat_cols:
+                selected_cat = st.selectbox("Select Categorical Feature", cat_cols, index=0, key="cat_feat_select")
+                cat_counts = df[selected_cat].value_counts(dropna=False).reset_index()
+                cat_counts.columns = [selected_cat, "Count"]
+                cat_counts[selected_cat] = cat_counts[selected_cat].fillna("Missing (NaN)").astype(str)
+
+                fig_cat_bar = px.bar(
+                    cat_counts,
+                    x=selected_cat,
+                    y="Count",
+                    color=selected_cat,
+                    text="Count",
+                    title=f"Frequency Breakdown: {selected_cat}",
+                    template="plotly_white",
+                )
+                fig_cat_bar.update_layout(height=300, margin=dict(l=10, r=10, t=30, b=10), showlegend=False)
+                st.plotly_chart(fig_cat_bar, use_container_width=True)
+            else:
+                st.info("No categorical features found in dataset.")
+
     # =========================================================================
     # ROW 2: Dataset Statistics & Download Panel
     # =========================================================================

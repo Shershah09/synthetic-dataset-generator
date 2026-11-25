@@ -1,13 +1,14 @@
 """Modular workflow pipeline for synthetic dataset generation.
 
-Structured to align cleanly with LangGraph state-graph patterns for future
-autonomous agent orchestration across 6 clear sequential stages:
+Structured to align cleanly with LangGraph state-graph patterns
+across the specialized agents:
 1. Requirements & Planning
-2. Schema Construction
-3. Data Generation
-4. Validation & Quality Audit
-5. Evaluation & Repair/Retry
-6. Export Preparation
+2. Knowledge Retrieval (RAG)
+3. Schema Construction
+4. Data Generation
+5. Validation & Quality Audit
+6. Evaluation & Repair/Retry Loop
+7. Export Preparation
 """
 
 from __future__ import annotations
@@ -21,12 +22,14 @@ try:
     from core.validator import DataValidator, QualityReport
     from core.exporter import ExportService
     from ai.schema_agent import SchemaAgent
+    from ai.multi_agent_system import MultiAgentOrchestrator, MultiAgentState
 except ImportError:
     from synthetic_dataset_generator.core.schema_builder import DatasetSchema
     from synthetic_dataset_generator.core.data_generator import DataGenerator
     from synthetic_dataset_generator.core.validator import DataValidator, QualityReport
     from synthetic_dataset_generator.core.exporter import ExportService
     from synthetic_dataset_generator.ai.schema_agent import SchemaAgent
+    from synthetic_dataset_generator.ai.multi_agent_system import MultiAgentOrchestrator, MultiAgentState
 
 
 @dataclass
@@ -50,85 +53,32 @@ class WorkflowState:
 
 
 class SyntheticDataWorkflow:
-    """Executes the 6-stage synthetic data generation workflow."""
+    """Executes the multi-stage synthetic data generation workflow."""
 
     def __init__(self, schema_agent: Optional[SchemaAgent] = None):
         self.schema_agent = schema_agent or SchemaAgent()
+        self.orchestrator = MultiAgentOrchestrator()
 
     def run(self, initial_state: WorkflowState) -> WorkflowState:
-        """Run the full end-to-end pipeline through all 6 stages."""
-        state = initial_state
+        """Run the full end-to-end pipeline through all stages."""
+        # Convert WorkflowState to MultiAgentState
+        agent_state = MultiAgentState(
+            prompt=initial_state.raw_prompt,
+            schema=initial_state.schema,
+            domain=initial_state.schema.domain if initial_state.schema else "Healthcare",
+            ml_task=initial_state.schema.ml_task if initial_state.schema else "Classification",
+            n_rows=initial_state.schema.n_rows if initial_state.schema else 1000,
+        )
 
-        try:
-            state = self.stage_1_plan(state)
-            state = self.stage_2_schema(state)
-            state = self.stage_3_generate(state)
-            state = self.stage_4_validate(state)
-            state = self.stage_5_evaluate_retry(state)
-            state = self.stage_6_export(state)
-            state.success = True
-        except Exception as exc:
-            state.success = False
-            state.error_message = str(exc)
-            state.step_history.append(f"Failed at {state.current_step}: {str(exc)}")
+        agent_state = self.orchestrator.execute(agent_state)
 
-        return state
+        initial_state.dataset = agent_state.dataset
+        initial_state.schema = agent_state.schema
+        initial_state.quality_report = agent_state.quality_report
+        initial_state.exports = agent_state.exports
+        initial_state.success = agent_state.success
+        initial_state.error_message = agent_state.error_message
+        initial_state.current_step = agent_state.current_state
+        initial_state.step_history = [f"[{log.agent_name} | {log.state}] {log.message}" for log in agent_state.logs]
 
-    def stage_1_plan(self, state: WorkflowState) -> WorkflowState:
-        """Stage 1: Requirements & Planning."""
-        state.current_step = "Planning"
-        state.step_history.append("Stage 1: Interpreted requirements & formulated data generation plan.")
-        state.generation_plan = {
-            "has_custom_prompt": state.raw_prompt is not None,
-            "domain": state.schema.domain if state.schema else "Pending",
-        }
-        return state
-
-    def stage_2_schema(self, state: WorkflowState) -> WorkflowState:
-        """Stage 2: Schema Construction."""
-        state.current_step = "Schema Building"
-        if state.schema is None and state.raw_prompt:
-            state.schema = self.schema_agent.create_schema_from_prompt(state.raw_prompt)
-        state.step_history.append("Stage 2: Validated DatasetSchema established.")
-        return state
-
-    def stage_3_generate(self, state: WorkflowState) -> WorkflowState:
-        """Stage 3: Data Generation Engine."""
-        state.current_step = "Data Generation"
-        if not state.schema:
-            raise ValueError("Schema must be defined before generation.")
-        generator = DataGenerator(state.schema)
-        state.dataset = generator.generate()
-        state.step_history.append(f"Stage 3: Generated {len(state.dataset)} rows across {len(state.dataset.columns)} columns.")
-        return state
-
-    def stage_4_validate(self, state: WorkflowState) -> WorkflowState:
-        """Stage 4: Validation & Quality Audit."""
-        state.current_step = "Quality Validation"
-        if state.dataset is None or state.schema is None:
-            raise ValueError("Dataset and schema must exist for validation.")
-        validator = DataValidator(state.schema)
-        repaired_df, report = validator.validate(state.dataset, auto_repair=True)
-        state.dataset = repaired_df
-        state.quality_report = report
-        state.step_history.append(f"Stage 4: Quality validation complete (Score: {report.overall_score}/100).")
-        return state
-
-    def stage_5_evaluate_retry(self, state: WorkflowState) -> WorkflowState:
-        """Stage 5: Evaluation & Auto-repair."""
-        state.current_step = "Evaluation & Repair"
-        # If any failed check occurred, report or re-validate
-        if state.quality_report and state.quality_report.failed_count > 0:
-            state.step_history.append("Stage 5: Unresolved validation issues flagged.")
-        else:
-            state.step_history.append("Stage 5: Quality criteria satisfied. Ready for export.")
-        return state
-
-    def stage_6_export(self, state: WorkflowState) -> WorkflowState:
-        """Stage 6: Export Service."""
-        state.current_step = "Export Preparation"
-        if state.dataset is not None and state.schema is not None:
-            csv_b, _, _ = ExportService.to_csv(state.dataset, state.schema.domain, state.schema.ml_task)
-            state.exports["csv"] = csv_b
-            state.step_history.append("Stage 6: Pre-compiled in-memory export buffers.")
-        return state
+        return initial_state

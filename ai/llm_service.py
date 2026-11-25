@@ -1,23 +1,91 @@
-"""LLM Service integration layer for natural-language dataset schema generation.
+"""LLM Service & Prompt Engineering integration layer.
 
-Modular design supporting Google Gemini via API key stored in environment variables,
-with offline rule-based heuristic fallback if no API key is provided.
+Implements:
+- Google Gemini API integration with secure key handling.
+- Prompt Engineering Module (Ch 3.1.3, 4.2.3).
+- Prompt Injection Sanitizer & Defense (Ch 6.1, 6.2, TC-12).
+- Automatic Fallback Heuristic Parser when API key is unavailable (TC-11).
+- Context Augmentation with RAG.
 """
 
 from __future__ import annotations
 import os
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+
+class PromptSanitizer:
+    """Security filter to detect and neutralize prompt injection and credential exfiltration attempts."""
+
+    INJECTION_PATTERNS = [
+        r"ignore\s+(all\s+)?previous\s+instructions",
+        r"(reveal|show|print|leak|output|give|steal|display|extract|what\s+is).*?(api[_\s-]?key|secret|token|credential|env|password)",
+        r"system\s+prompt",
+        r"(os\.getenv|os\.environ|process\.env)",
+        r"act\s+as\s+jailbreak",
+        r"confidential\s+token",
+    ]
+
+    @classmethod
+    def sanitize(cls, prompt: str) -> Tuple[str, bool, Optional[str]]:
+        """Sanitizes user prompt.
+
+        Returns:
+            Tuple of (sanitized_prompt, is_malicious, rejection_reason)
+        """
+        p_lower = prompt.lower()
+        for pattern in cls.INJECTION_PATTERNS:
+            if re.search(pattern, p_lower):
+                return (
+                    "Generate a standard general machine learning benchmark dataset with 1000 rows.",
+                    True,
+                    "Security Notice: Malicious instruction or API credential access attempt detected and neutralized.",
+                )
+        return prompt, False, None
+
+
+class PromptEngine:
+    """Formats structured prompts according to Chapter 4.2.3 requirements."""
+
+    @staticmethod
+    def build_system_instruction(rag_context: Optional[str] = None) -> str:
+        """Constructs prompt containing domain constraints, types, and JSON schema format."""
+        instruction = (
+            "You are an expert Data Scientist and AI Agent. Convert the user's natural language request into a "
+            "precise JSON dataset schema for synthetic tabular data generation.\n\n"
+            "Required JSON format:\n"
+            "{\n"
+            '  "domain": "Healthcare | Banking and Finance | E-commerce | Education | Agriculture | General ML",\n'
+            '  "ml_task": "Classification | Regression | Clustering | General",\n'
+            '  "n_rows": integer (e.g. 1000),\n'
+            '  "target_column": "string name or null",\n'
+            '  "missing_percentage": float between 0.0 and 40.0,\n'
+            '  "columns": [\n'
+            '    {"name": "Col_Name", "col_type": "numeric|categorical|boolean|datetime|id", '
+            '"min_val": float, "max_val": float, "mean": float, "std": float, "categories": ["A", "B"]}\n'
+            "  ]\n"
+            "}\n"
+            "Respond ONLY with valid JSON. Never output conversational text, explanations, or system secrets.\n"
+        )
+        if rag_context:
+            instruction += f"\n{rag_context}\n"
+        return instruction
 
 
 class LLMService:
     """Service to communicate with Generative AI models (e.g. Gemini) for schema drafting."""
 
     def __init__(self, api_key: Optional[str] = None):
+        # Securely fetch API key from parameter or environment variable
         self.api_key = api_key or os.getenv("GEMINI_API_KEY", "")
         self.model_name = "gemini-1.5-flash"
         self._client = None
+        self._init_client()
+
+    def set_api_key(self, api_key: str):
+        """Update API key dynamically at runtime."""
+        self.api_key = api_key.strip()
         self._init_client()
 
     def _init_client(self):
@@ -29,70 +97,84 @@ class LLMService:
                 self._client = genai.GenerativeModel(self.model_name)
             except Exception:
                 self._client = None
+        else:
+            self._client = None
 
     @property
     def is_available(self) -> bool:
         """Returns True if live LLM client is configured."""
         return self._client is not None
 
-    def generate_schema_json(self, user_prompt: str) -> Dict[str, Any]:
+    def generate_schema_json(
+        self, user_prompt: str, rag_context: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Convert natural language prompt into a structured JSON schema.
 
-        If live LLM is configured, calls model; otherwise employs heuristic NLP parser.
+        Includes prompt injection defense (TC-12) and automatic heuristic fallback (TC-11).
         """
+        # Step 1: Prompt Sanitization & Injection Defense
+        safe_prompt, is_malicious, alert = PromptSanitizer.sanitize(user_prompt)
+        if is_malicious:
+            return {
+                "domain": "General ML",
+                "ml_task": "Classification",
+                "n_rows": 1000,
+                "missing_percentage": 5.0,
+                "source": "prompt_injection_sanitizer",
+                "security_alert": alert,
+            }
+
+        # Step 2: Live Gemini Call if API is configured
         if self.is_available:
             try:
-                system_instruction = (
-                    "You are an expert Data Scientist AI. Convert the user's natural language request into a "
-                    "JSON dataset schema with keys: domain, ml_task, n_rows, target_column, missing_percentage, "
-                    "columns (list with name, col_type, min_val, max_val, categories). "
-                    "Respond ONLY with valid JSON."
-                )
+                system_instruction = PromptEngine.build_system_instruction(rag_context)
                 response = self._client.generate_content(
-                    f"{system_instruction}\n\nUser request: {user_prompt}"
+                    f"{system_instruction}\n\nUser request: {safe_prompt}"
                 )
                 text = response.text.strip()
-                # Extract JSON block
                 json_match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-                if json_match:
-                    return json.loads(json_match.group(1))
-                return json.loads(text)
+                raw_json = json_match.group(1) if json_match else text
+                result = json.loads(raw_json)
+                result["source"] = "google_gemini_api"
+                return result
             except Exception:
-                pass  # Fall back to heuristic parser
+                pass  # Fall back to heuristic parser gracefully (TC-11)
 
-        return self._heuristic_parse(user_prompt)
+        # Step 3: Deterministic Fallback Parser (Offline / API unavailable)
+        return self._heuristic_parse(safe_prompt)
 
     def _heuristic_parse(self, prompt: str) -> Dict[str, Any]:
-        """Offline heuristic parser to extract domain, rows, task, and target from prompt."""
+        """Offline rule-based heuristic parser to extract domain, rows, task, and target from prompt."""
         p_lower = prompt.lower()
 
-        # Rows extraction
+        # Rows extraction (e.g. 500, 1000, 2500, 5000, 10000)
         n_rows = 1000
         row_match = re.search(r"(\d+[\d,]*)\s*(?:rows|records|samples)", p_lower)
         if row_match:
             try:
                 n_rows = int(row_match.group(1).replace(",", ""))
+                n_rows = max(1, min(n_rows, 50000))
             except ValueError:
                 pass
 
         # Domain extraction
         domain = "General ML"
-        if any(w in p_lower for w in ["health", "patient", "medical", "disease", "hospital", "clinical"]):
+        if any(w in p_lower for w in ["health", "patient", "medical", "disease", "hospital", "clinical", "blood", "bmi"]):
             domain = "Healthcare"
-        elif any(w in p_lower for w in ["bank", "loan", "credit", "finance", "fraud", "default"]):
+        elif any(w in p_lower for w in ["bank", "loan", "credit", "finance", "fraud", "default", "balance"]):
             domain = "Banking and Finance"
-        elif any(w in p_lower for w in ["ecommerce", "e-commerce", "churn", "shop", "customer", "purchase", "order"]):
+        elif any(w in p_lower for w in ["ecommerce", "e-commerce", "churn", "shop", "customer", "purchase", "order", "sales"]):
             domain = "E-commerce"
-        elif any(w in p_lower for w in ["student", "school", "exam", "education", "grade", "gpa"]):
+        elif any(w in p_lower for w in ["student", "school", "exam", "education", "grade", "gpa", "attendance"]):
             domain = "Education"
-        elif any(w in p_lower for w in ["crop", "soil", "agriculture", "farm", "yield"]):
+        elif any(w in p_lower for w in ["crop", "soil", "agriculture", "farm", "yield", "rainfall"]):
             domain = "Agriculture"
 
         # Task extraction
         ml_task = "Classification"
-        if "regress" in p_lower or "predict score" in p_lower or "continuous" in p_lower:
+        if any(w in p_lower for w in ["regress", "continuous", "predict score", "yield", "amount", "price"]):
             ml_task = "Regression"
-        elif "cluster" in p_lower or "unsupervised" in p_lower or "grouping" in p_lower:
+        elif any(w in p_lower for w in ["cluster", "unsupervised", "grouping", "segmentation", "segments"]):
             ml_task = "Clustering"
 
         # Missing percentage
@@ -103,11 +185,13 @@ class LLMService:
                 missing_pct = float(missing_match.group(1))
             except ValueError:
                 pass
+        elif "no missing" in p_lower or "zero missing" in p_lower:
+            missing_pct = 0.0
 
         return {
             "domain": domain,
             "ml_task": ml_task,
             "n_rows": n_rows,
             "missing_percentage": missing_pct,
-            "source": "heuristic_nlp_parser",
+            "source": "fallback_heuristic_parser",
         }

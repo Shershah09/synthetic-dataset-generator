@@ -21,11 +21,15 @@ try:
         DatasetSchema,
         build_schema_for_domain,
     )
+    from ai.llm_service import LLMService
+    from ai.rag_pipeline import get_rag_pipeline
 except ImportError:
     from synthetic_dataset_generator.core.schema_builder import (
         DatasetSchema,
         build_schema_for_domain,
     )
+    from synthetic_dataset_generator.ai.llm_service import LLMService
+    from synthetic_dataset_generator.ai.rag_pipeline import get_rag_pipeline
 
 
 def render_configuration_panel() -> Tuple[bool, Optional[DatasetSchema]]:
@@ -58,6 +62,44 @@ def render_configuration_panel() -> Tuple[bool, Optional[DatasetSchema]]:
             st.session_state["current_dataset"] = None
             st.session_state["quality_report"] = None
             st.rerun()
+
+    # AI Natural-Language Prompt Assistant (Report Figure 4.3)
+    with st.expander("✨ AI Natural-Language Prompt Assistant", expanded=False):
+        st.caption("Describe the dataset requirements in plain English, and the AI will analyze parameters and constraints.")
+        user_prompt_input = st.text_area(
+            "Natural Language Prompt",
+            value=st.session_state.get("nl_prompt", ""),
+            placeholder="e.g. Generate 1000 healthcare patient records for disease prediction with 10 features, 5% missing values, and realistic blood pressure bounds.",
+            key="nl_prompt_input",
+            height=85,
+        )
+        api_key_input = st.text_input(
+            "Gemini API Key (Optional)",
+            value=st.session_state.get("gemini_api_key", ""),
+            type="password",
+            placeholder="AIzaSy... (Leave empty for smart offline RAG heuristic)",
+            key="gemini_api_key_input",
+            help="Your API key stays in local memory for this session and is never logged or exposed.",
+        )
+        st.session_state["gemini_api_key"] = api_key_input
+
+        if st.button("🤖 Analyze & Apply Prompt", key="btn_apply_nl_prompt", use_container_width=True):
+            if user_prompt_input.strip():
+                st.session_state["nl_prompt"] = user_prompt_input
+                rag = get_rag_pipeline()
+                rag_context = rag.build_augmented_context(user_prompt_input)
+                llm = LLMService(api_key=api_key_input)
+                parsed = llm.generate_schema_json(user_prompt_input, rag_context=rag_context)
+
+                st.session_state["domain"] = parsed.get("domain", "Healthcare")
+                st.session_state["ml_task"] = parsed.get("ml_task", "Classification")
+                st.session_state["n_rows"] = parsed.get("n_rows", 1000)
+                miss_val = parsed.get("missing_percentage", 5.0)
+                st.session_state["missing_pct"] = miss_val
+                st.session_state["include_missing_opt"] = "Yes (Custom %)" if miss_val > 0 else "No"
+
+                st.success(f"✅ Interpreted: **{parsed.get('domain')}** ({parsed.get('ml_task')}) | **{parsed.get('n_rows'):,}** rows | Engine: `{parsed.get('source', 'RAG Heuristic')}`")
+                st.rerun()
 
     # 1. Domain / Use Case
     domain_options = [

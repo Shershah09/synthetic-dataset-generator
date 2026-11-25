@@ -61,7 +61,7 @@ class ConstraintConfig(BaseModel):
 class DatasetSchema(BaseModel):
     domain: str = "Healthcare"
     ml_task: str = "Classification"  # Classification, Regression, Clustering, General
-    n_rows: int = Field(default=1000, ge=10, le=100000)
+    n_rows: int = Field(default=1000, ge=1, le=100000)
     columns: List[ColumnConfig] = Field(default_factory=list)
     target_column: Optional[str] = "Disease"
     target_classes: Optional[List[Any]] = Field(default_factory=lambda: [0, 1])
