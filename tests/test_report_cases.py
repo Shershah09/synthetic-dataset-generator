@@ -237,3 +237,60 @@ def test_tc_12_prompt_injection_protection():
         result_str = json.dumps(result)
         assert "SUPER_SECRET_KEY_12345" not in result_str
         assert result.get("source") == "prompt_injection_sanitizer"
+
+
+def test_rag_pipeline_langchain_retriever():
+    """Verify RAG Knowledge Base integrates seamlessly with LangChain BaseRetriever."""
+    rag = get_rag_pipeline()
+    retriever = rag.as_retriever(domain="Healthcare", top_k=2)
+
+    docs = retriever.invoke("blood pressure systolic bounds")
+    assert len(docs) > 0
+    # Must have page_content and metadata
+    first_doc = docs[0]
+    content = first_doc.page_content if hasattr(first_doc, "page_content") else first_doc["page_content"]
+    assert "Blood Pressure" in content or "Hypertension" in content or "bounds" in content.lower()
+
+
+def test_langchain_prompt_and_parser_chain():
+    """Verify LangChain PromptTemplate, OutputParser, and LCEL chaining."""
+    llm = LLMService(api_key="")
+    chain = llm.build_langchain_chain()
+    assert chain is not None
+
+    res = llm.invoke_langchain(
+        user_prompt="Generate 500 patient records for diabetes classification",
+        rag_context="Fasting glucose >= 126 mg/dL indicates diabetes.",
+    )
+    assert isinstance(res, dict)
+    assert res.get("domain") == "Healthcare"
+    assert res.get("n_rows") == 500
+
+
+def test_langgraph_multi_agent_execution():
+    """Verify 7-Agent execution through native LangGraph StateGraph."""
+    orchestrator = MultiAgentOrchestrator()
+    assert orchestrator.langgraph_app is not None
+
+    state = MultiAgentState(
+        prompt="Generate 100 agricultural soil nutrient records for yield prediction",
+        domain="Agriculture",
+        ml_task="Regression",
+        n_rows=100,
+    )
+    result_state = orchestrator.execute(state)
+
+    assert result_state.success is True
+    assert result_state.is_langgraph_native is True
+    assert result_state.dataset is not None
+    assert len(result_state.dataset) == 100
+    assert result_state.quality_report is not None
+    assert result_state.quality_report.overall_score >= 80
+    assert "csv" in result_state.exports
+    assert "xlsx" in result_state.exports
+    assert "json" in result_state.exports
+
+    # Verify Mermaid diagram generation from compiled LangGraph
+    mermaid = orchestrator.get_mermaid_graph()
+    assert "requirement_analysis" in mermaid
+    assert "validation" in mermaid

@@ -14,6 +14,18 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
+    from langchain_core.output_parsers import JsonOutputParser
+    from langchain_core.runnables import RunnableLambda
+    LANGCHAIN_CORE_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_CORE_AVAILABLE = False
+    PromptTemplate = None
+    ChatPromptTemplate = None
+    JsonOutputParser = None
+    RunnableLambda = None
+
 
 class PromptSanitizer:
     """Security filter to detect and neutralize prompt injection and credential exfiltration attempts."""
@@ -72,6 +84,34 @@ class PromptEngine:
             instruction += f"\n{rag_context}\n"
         return instruction
 
+    @staticmethod
+    def get_langchain_prompt_template() -> Any:
+        """Returns a LangChain PromptTemplate with input variables ['rag_context', 'user_request']."""
+        if PromptTemplate is not None:
+            template = (
+                "You are an expert Data Scientist and AI Agent. Convert the user's natural language request into a "
+                "precise JSON dataset schema for synthetic tabular data generation.\n\n"
+                "Required JSON format:\n"
+                "{{\n"
+                '  "domain": "Healthcare | Banking and Finance | E-commerce | Education | Agriculture | General ML",\n'
+                '  "ml_task": "Classification | Regression | Clustering | General",\n'
+                '  "n_rows": <integer_count>,\n'
+                '  "target_column": "target",\n'
+                '  "missing_percentage": 5.0,\n'
+                '  "columns": [\n'
+                '    {{"name": "Feature_A", "col_type": "numeric", "min_val": 0.0, "max_val": 100.0}}\n'
+                "  ]\n"
+                "}}\n\n"
+                "Domain RAG Knowledge Context:\n{rag_context}\n\n"
+                "User Request:\n{user_request}\n\n"
+                "Respond ONLY with valid JSON."
+            )
+            return PromptTemplate(
+                template=template,
+                input_variables=["rag_context", "user_request"],
+            )
+        return None
+
 
 class LLMService:
     """Service to communicate with Generative AI models (e.g. Gemini) for schema drafting."""
@@ -104,6 +144,61 @@ class LLMService:
     def is_available(self) -> bool:
         """Returns True if live LLM client is configured."""
         return self._client is not None
+
+    def build_langchain_chain(self) -> Any:
+        """Constructs an executable LangChain LCEL sequence:
+        PromptTemplate -> LLM/Fallback Runnable -> JsonOutputParser
+        """
+        if not LANGCHAIN_CORE_AVAILABLE:
+            return None
+
+        prompt_template = PromptEngine.get_langchain_prompt_template()
+        parser = JsonOutputParser() if JsonOutputParser else None
+
+        def _execute_model(prompt_val: Any) -> str:
+            prompt_str = prompt_val.to_string() if hasattr(prompt_val, "to_string") else str(prompt_val)
+            safe_text, is_malicious, alert = PromptSanitizer.sanitize(prompt_str)
+            if is_malicious:
+                return json.dumps({
+                    "domain": "General ML",
+                    "ml_task": "Classification",
+                    "n_rows": 1000,
+                    "missing_percentage": 5.0,
+                    "source": "prompt_injection_sanitizer",
+                    "security_alert": alert,
+                })
+            if self.is_available:
+                try:
+                    resp = self._client.generate_content(safe_text)
+                    return resp.text.strip()
+                except Exception:
+                    pass
+            # Deterministic heuristic fallback: isolate actual user request from template
+            user_part = safe_text
+            if "User Request:" in safe_text:
+                user_part = safe_text.split("User Request:", 1)[1]
+                if "Respond ONLY" in user_part:
+                    user_part = user_part.split("Respond ONLY", 1)[0]
+            parsed = self._heuristic_parse(user_part.strip())
+            parsed["source"] = "langchain_fallback_parser"
+            return json.dumps(parsed)
+
+        if RunnableLambda and prompt_template and parser:
+            return prompt_template | RunnableLambda(_execute_model) | parser
+        return None
+
+    def invoke_langchain(self, user_prompt: str, rag_context: str = "") -> Dict[str, Any]:
+        """Execute schema drafting via the LangChain LCEL pipeline."""
+        chain = self.build_langchain_chain()
+        if chain is not None:
+            try:
+                result = chain.invoke({"user_request": user_prompt, "rag_context": rag_context})
+                if isinstance(result, dict):
+                    result.setdefault("source", "langchain_lcel_chain")
+                    return result
+            except Exception:
+                pass
+        return self.generate_schema_json(user_prompt, rag_context=rag_context)
 
     def generate_schema_json(
         self, user_prompt: str, rag_context: Optional[str] = None
@@ -149,7 +244,7 @@ class LLMService:
 
         # Rows extraction (e.g. 500, 1000, 2500, 5000, 10000)
         n_rows = 1000
-        row_match = re.search(r"(\d+[\d,]*)\s*(?:rows|records|samples)", p_lower)
+        row_match = re.search(r"(\d+[\d,]*)\s*(?:[a-zA-Z_-]+\s+){0,5}(?:rows|records|samples)", p_lower)
         if row_match:
             try:
                 n_rows = int(row_match.group(1).replace(",", ""))

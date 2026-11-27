@@ -17,6 +17,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+try:
+    from langchain_core.documents import Document as LCDocument
+    from langchain_core.retrievers import BaseRetriever
+    LANGCHAIN_CORE_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_CORE_AVAILABLE = False
+    LCDocument = None
+    BaseRetriever = object
+
 
 @dataclass
 class DocumentChunk:
@@ -27,6 +36,18 @@ class DocumentChunk:
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
     vector: Optional[Dict[str, float]] = None
+
+    def to_langchain_document(self) -> Any:
+        """Convert chunk into a standard LangChain Document object."""
+        meta = {
+            "chunk_id": self.chunk_id,
+            "domain": self.domain,
+            "title": self.title,
+            **self.metadata,
+        }
+        if LCDocument is not None:
+            return LCDocument(page_content=self.content, metadata=meta)
+        return {"page_content": self.content, "metadata": meta}
 
 
 # =============================================================================
@@ -240,6 +261,52 @@ class RAGPipeline:
         context_lines.append("--------------------------------------------------")
 
         return "\n".join(context_lines)
+
+    def as_retriever(self, domain: Optional[str] = None, top_k: int = 3) -> LangChainRAGRetriever:
+        """Expose RAG pipeline as a standard LangChain BaseRetriever."""
+        return LangChainRAGRetriever(rag_pipeline=self, domain=domain, top_k=top_k)
+
+
+# =============================================================================
+# LangChain Retriever Adapter
+# =============================================================================
+class LangChainRAGRetriever:
+    """LangChain-compatible Retriever interface for the RAG Knowledge Base.
+    
+    Adheres to the LangChain BaseRetriever contract:
+    - get_relevant_documents(query) -> List[Document]
+    - invoke(query) -> List[Document]
+    """
+
+    def __init__(
+        self,
+        rag_pipeline: Optional[RAGPipeline] = None,
+        domain: Optional[str] = None,
+        top_k: int = 3,
+    ):
+        self.rag_pipeline = rag_pipeline or get_rag_pipeline()
+        self.domain = domain
+        self.top_k = top_k
+
+    def _get_relevant_documents(self, query: str, **kwargs: Any) -> List[Any]:
+        """LangChain retrieval implementation returning Document objects."""
+        matches = self.rag_pipeline.similarity_search(query=query, domain=self.domain, top_k=self.top_k)
+        docs = []
+        for chk, score in matches:
+            doc = chk.to_langchain_document()
+            if hasattr(doc, "metadata"):
+                doc.metadata["similarity_score"] = score
+            elif isinstance(doc, dict):
+                doc["metadata"]["similarity_score"] = score
+            docs.append(doc)
+        return docs
+
+    def get_relevant_documents(self, query: str, **kwargs: Any) -> List[Any]:
+        return self._get_relevant_documents(query, **kwargs)
+
+    def invoke(self, input: str, **kwargs: Any) -> List[Any]:
+        """LangChain LCEL Runnable interface invoke method."""
+        return self._get_relevant_documents(str(input), **kwargs)
 
 
 # Global singleton pipeline instance

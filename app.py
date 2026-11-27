@@ -682,6 +682,25 @@ Exports are streamed directly in-memory to prevent persistent server disk accumu
 - **CSV:** UTF-8 encoded with standard comma separators.
 - **Excel (.xlsx):** Multi-column workbook generated via OpenPyXL.
 - **JSON:** Record-oriented structured array for REST API ingestion.
+
+#### 4. Advanced AI Framework Integrations: RAG, LangChain & LangGraph
+The system implements modern Generative AI and Agentic AI architectures as documented in Chapters 3 & 4 of the project report:
+
+- **Retrieval-Augmented Generation (RAG)** (`ai/rag_pipeline.py`):
+  - **8-Stage RAG Pipeline**: Ingestion -> Chunking -> TF-IDF Vector Embeddings -> Cosine Similarity Matching -> Prompt Augmentation.
+  - **Knowledge Base**: 6 domain corpora (Healthcare, Banking, E-commerce, Education, Agriculture, General ML) providing physiological and regulatory reference ranges.
+  - **LangChain Retriever Adapter**: Implements `LangChainRAGRetriever(BaseRetriever)` to allow standard `.invoke()` and `.get_relevant_documents()` calls in LangChain LCEL pipelines.
+
+- **LangChain Framework** (`ai/llm_service.py`):
+  - **PromptTemplate / ChatPromptTemplate**: Formats structured system instructions, safety directives, RAG context, and user request variables.
+  - **JsonOutputParser**: Guarantees deterministic schema extraction matching the Pydantic `DatasetSchema`.
+  - **LCEL Sequence**: Chains `PromptTemplate | RunnableLambda(model/fallback) | JsonOutputParser` for modular execution.
+  - **PromptSanitizer**: Multi-pattern regex defense against prompt injection and API credential exfiltration (TC-12).
+
+- **LangGraph Multi-Agent StateGraph** (`ai/multi_agent_system.py` & `ai/workflow.py`):
+  - **Compiled StateGraph**: Built using `langgraph.graph.StateGraph` and `END`.
+  - **7 Specialized Agents**: Requirement Analysis, Knowledge Retrieval (RAG), Schema Generation (LangChain), Data Generation, Validation, Quality Evaluation, and Export Agent.
+  - **Self-Healing Cyclical Repair Loop**: Conditional edge routing from `validation` to `repair` if boundary breaches occur, returning to `validation` before passing to `quality_evaluation`.
     """)
 
 
@@ -758,14 +777,30 @@ print(df.describe().T)
 
 
 def view_ai_agent_and_rag_studio():
-    """AI Agent & RAG Studio View: Multi-Agent Workflow and Vector Knowledge Base."""
-    st.markdown("## 🤖 AI Agent & RAG Studio (LangGraph-Aligned Multi-Agent System)")
-    st.caption("Demonstrating Chapter 3 & 4: Retrieval-Augmented Generation (RAG) and 7 Specialized Autonomous Agents.")
+    """AI Agent & RAG Studio View: Multi-Agent Workflow, LangChain LCEL, and LangGraph StateGraph."""
+    st.markdown("## 🤖 AI Agent & RAG Studio (LangGraph & LangChain Multi-Agent Architecture)")
+    st.caption("Demonstrating Chapter 3 & 4: Retrieval-Augmented Generation (RAG), LangChain LCEL Runnables, and 7-Agent LangGraph StateGraph.")
 
-    agent_tab1, agent_tab2, agent_tab3 = st.tabs([
+    # Status Badges
+    st.markdown("""
+        <div style="display: flex; gap: 10px; margin: 10px 0 20px 0; flex-wrap: wrap;">
+            <span style="background: #eff6ff; color: #1d4ed8; padding: 5px 14px; border-radius: 9999px; font-size: 0.82rem; font-weight: 600; border: 1px solid #bfdbfe;">
+                🕸️ LangGraph: StateGraph Active (v1.2.24)
+            </span>
+            <span style="background: #f0fdf4; color: #15803d; padding: 5px 14px; border-radius: 9999px; font-size: 0.82rem; font-weight: 600; border: 1px solid #bbf7d0;">
+                🔗 LangChain: LCEL & OutputParser Active (v1.8.5)
+            </span>
+            <span style="background: #faf5ff; color: #7e22ce; padding: 5px 14px; border-radius: 9999px; font-size: 0.82rem; font-weight: 600; border: 1px solid #e9d5ff;">
+                📚 RAG: Vector Knowledge Retriever (6 Domains)
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    agent_tab1, agent_tab2, agent_tab3, agent_tab4 = st.tabs([
         "⚡ Multi-Agent Workflow Runner",
         "📚 RAG Vector Knowledge Base",
-        "🔄 Agent Reasoning State Machine",
+        "🕸️ LangGraph StateGraph Architecture",
+        "🔗 LangChain LCEL & Prompt Chains",
     ])
 
     with agent_tab1:
@@ -797,7 +832,7 @@ def view_ai_agent_and_rag_studio():
             run_agents_btn = st.button("🚀 Run 7-Agent Workflow", type="primary", use_container_width=True)
 
         if run_agents_btn and agent_prompt.strip():
-            with st.spinner("🤖 Coordinated Agents Executing Workflow (LangGraph State Loop)..."):
+            with st.spinner("🤖 Coordinated Agents Executing Workflow via LangGraph StateGraph..."):
                 llm = LLMService(api_key=agent_api_key)
                 orchestrator = MultiAgentOrchestrator(llm_service=llm)
                 init_state = MultiAgentState(prompt=agent_prompt.strip())
@@ -813,7 +848,8 @@ def view_ai_agent_and_rag_studio():
                     st.session_state["domain"] = final_state.domain
                     st.session_state["ml_task"] = final_state.ml_task
 
-                    st.success(f"✨ Workflow Complete in {final_state.total_duration_sec}s! Quality Score: {final_state.quality_report.overall_score}/100")
+                    mode_badge = "🟢 Mode: Native LangGraph StateGraph (Compiled)" if final_state.is_langgraph_native else "🟡 Mode: Sequential Agent Fallback"
+                    st.success(f"✨ Workflow Complete in {final_state.total_duration_sec}s! Quality Score: {final_state.quality_report.overall_score}/100 | {mode_badge}")
 
                     # Display Agent Execution Timeline
                     st.markdown("#### ⏱️ Multi-Agent Execution Timeline & Telemetry")
@@ -841,8 +877,11 @@ def view_ai_agent_and_rag_studio():
                     st.error(f"❌ Workflow Error: {final_state.error_message}")
 
     with agent_tab2:
-        st.markdown("### 📚 RAG Vector Knowledge Base & Retrieval Pipeline (Ch 3.2.5, Fig 3.6)")
-        st.markdown("The RAG pipeline ingests domain-specific documents, computes vector embeddings, and performs cosine similarity search to augment the Gemini prompt.")
+        st.markdown("### 📚 RAG Vector Knowledge Base & LangChain BaseRetriever (Ch 3.2.5, Fig 3.6)")
+        st.markdown("""
+        The RAG pipeline ingests domain-specific documents, computes vector embeddings, and performs cosine similarity search.
+        It also exposes a native **LangChain `BaseRetriever`** interface (`LangChainRAGRetriever`) allowing direct integration into LCEL chains.
+        """)
 
         rag = get_rag_pipeline()
         c_r1, c_r2, c_r3 = st.columns(3)
@@ -850,41 +889,86 @@ def view_ai_agent_and_rag_studio():
         c_r2.metric("Document Chunks", f"{len(rag.chunks)} Chunks")
         c_r3.metric("Vocabulary Tokens", f"{len(rag.vocabulary) or len(rag.idf):,} Terms")
 
-        st.markdown("#### Test Vector Similarity Search")
+        st.markdown("#### Test Vector Similarity Search (Cosine & LangChain Retriever)")
         search_query = st.text_input("Enter domain query (e.g. 'blood pressure hypertension', 'credit score Basel III', 'soil moisture'):", "blood pressure hypertension limits")
         domain_filter = st.selectbox("Filter by Domain (Optional):", ["All Domains", "Healthcare", "Banking and Finance", "E-commerce", "Education", "Agriculture", "General ML"])
 
         filter_arg = None if domain_filter == "All Domains" else domain_filter
-        results = rag.similarity_search(search_query, domain=filter_arg, top_k=3)
+        retriever = rag.as_retriever(domain=filter_arg, top_k=3)
+        docs = retriever.invoke(search_query)
 
-        st.markdown(f"**Top Retrieved Knowledge Chunks ({len(results)} matches):**")
-        for chunk, score in results:
+        st.markdown(f"**Top Retrieved Knowledge Chunks ({len(docs)} matches via LangChain Document objects):**")
+        for doc in docs:
+            title = doc.metadata.get("title", "Knowledge Document")
+            domain_name = doc.metadata.get("domain", "General")
+            score = doc.metadata.get("similarity_score", 0.0)
             st.markdown(f"""
                 <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px;">
                     <div style="display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; color: #2563eb;">
-                        <span>{chunk.title} ({chunk.domain})</span>
+                        <span>{title} ({domain_name})</span>
                         <span style="background: #eff6ff; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem;">Cosine Score: {score:.3f}</span>
                     </div>
-                    <div style="font-size: 0.82rem; color: #334155; margin-top: 6px;">{chunk.content}</div>
+                    <div style="font-size: 0.82rem; color: #334155; margin-top: 6px;">{doc.page_content}</div>
                 </div>
             """, unsafe_allow_html=True)
 
     with agent_tab3:
-        st.markdown("### 🔄 Multi-Agent State Machine & Reasoning Loop (Figures 3.7 & 3.9)")
+        st.markdown("### 🕸️ LangGraph StateGraph Architecture (Report Ch 3.2.6 & Fig 3.7–3.9)")
         st.markdown("""
-        The system models an agent reasoning loop with feedback transitions:
-        - **1. [Idle]**: Awaits user input (prompt or preset parameters).
-        - **2. [Understanding Request]**: Requirement Analysis Agent parses domain, ML task, and shape.
-        - **3. [Retrieving Knowledge]**: Knowledge Retrieval Agent queries ChromaDB / TF-IDF vector store.
-        - **4. [Schema Generation]**: Schema Generation Agent prompts Gemini LLM with augmented context.
-        - **5. [Schema Validation]**: Pydantic validates column types, bounds, categories. *(Returns to Schema Generation if invalid)*.
-        - **6. [Data Generation]**: Data Generation Agent synthesizes records via NumPy/Pandas/Faker.
-        - **7. [Data Validation]**: Validation Agent checks bounds, missing values, duplicates.
-        - **8. [Repairing Loop]**: Auto-repairs boundary violations and revalidates.
-        - **9. [Quality Evaluation]**: Quality Evaluation Agent scores dataset (0-100).
-        - **10. [Ready]**: Interactive previews and Plotly visualizations generated.
-        - **11. [Exported]**: Downloadable CSV, Excel, and JSON buffers created in-memory.
+        The multi-agent system is compiled directly using **LangGraph `StateGraph`** (`langgraph.graph.StateGraph`), connecting 7 autonomous agent nodes with a cyclic self-healing repair conditional edge:
         """)
+
+        orchestrator = MultiAgentOrchestrator()
+        mermaid_code = orchestrator.get_mermaid_graph()
+
+        st.markdown("#### Live Compiled StateGraph Visualization (Mermaid)")
+        st.code(mermaid_code, language="mermaid")
+
+        st.markdown("""
+        #### State Transition Flow & Self-Healing Repair Cycle:
+        1. **`requirement_analysis`**: Interprets natural language requirements, extracts target rows, domain, and ML task.
+        2. **`knowledge_retrieval` (RAG)**: Queries domain vector embeddings to fetch realistic clinical/financial boundaries.
+        3. **`schema_generation` (LangChain)**: Binds RAG context into `PromptTemplate` and generates Pydantic `DatasetSchema`.
+        4. **`data_generation`**: Executes vectorized synthesis via NumPy, Pandas, and Faker.
+        5. **`validation`**: Audits data types, duplicates, and range boundaries.
+        6. **`repair` (Self-Healing Loop)**: **Conditional Edge:** If boundary breaches or null violations are detected and `repair_count <= 2`, routes to `repair` node, which clips out-of-bounds values and updates quality metrics, then re-validates!
+        7. **`quality_evaluation`**: Computes composite Quality Score ($0-100$).
+        8. **`export`**: Serializes in-memory byte streams for CSV, Excel (.xlsx), and JSON.
+        """)
+
+    with agent_tab4:
+        st.markdown("### 🔗 LangChain Core & LCEL Prompt Chains (Report Ch 4.2.3)")
+        st.markdown("""
+        The schema construction pipeline utilizes **LangChain Expression Language (LCEL)** components:
+        - **`PromptTemplate` / `ChatPromptTemplate`**: Formats system safety directives, domain RAG context, and user intent.
+        - **`JsonOutputParser`**: Enforces strict JSON output conforming to the Pydantic `DatasetSchema` specifications.
+        - **`BaseRetriever`**: Connects RAG vector similarity search directly into the prompt context.
+        """)
+
+        st.markdown("#### Executable LangChain LCEL Sequence:")
+        st.code("""
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.runnables import RunnableLambda
+
+# 1. Structured PromptTemplate with RAG and User Request slots
+prompt_template = PromptTemplate(
+    template="... Required JSON Schema: {rag_context} ... User: {user_request}",
+    input_variables=["rag_context", "user_request"]
+)
+
+# 2. Output Parser
+parser = JsonOutputParser()
+
+# 3. LangChain Expression Language (LCEL) Chain
+chain = prompt_template | RunnableLambda(llm_model) | parser
+
+# 4. Chain Execution
+schema_json = chain.invoke({
+    "user_request": "1000 healthcare patient records",
+    "rag_context": "Systolic BP 90-180 mmHg, BMI 16-45 kg/m2."
+})
+        """, language="python")
 
 
 def view_test_and_evaluation_suite():
